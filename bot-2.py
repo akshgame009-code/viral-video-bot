@@ -6,89 +6,67 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ============================================
-# SETTINGS
+# SETTINGS (Railway Variables)
 # ============================================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# Sabse stable URL Gemini 1.5 Flash ke liye
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY") 
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 # ============================================
 
 PROMPT_TEMPLATE = """Tu ek expert viral video script writer hai jo Hinglish mein likhta hai.
 PRODUCT: Trading Journal Template
 TOPIC: {topic}
 
-Return SIRF valid JSON (no markdown):
+Return ONLY valid JSON:
 {{
-  "hook": "Opening lines",
-  "full_script": "Poora Hinglish script",
-  "youtube_title": "YouTube title",
-  "description": "YouTube description",
-  "instagram_caption": "Instagram caption",
+  "hook": "Opening viral lines",
+  "full_script": "45-60 sec Hinglish script",
+  "youtube_title": "YouTube title with emojis",
+  "description": "YouTube description + link: arkcreator.gumroad.com/l/avstxm",
+  "instagram_caption": "Insta caption",
   "hashtags": "#trading #journal",
-  "keywords": "trading tips",
+  "keywords": "trading",
   "thumbnail_text": "Bold text",
-  "elevenlabs_script": "Clean voiceover script"
+  "elevenlabs_script": "Clean voiceover"
 }}"""
 
-async def call_gemini(topic: str) -> dict:
+async def call_ai(topic: str) -> dict:
     payload = {
-        "contents": [{
-            "parts": [{
-                "text": PROMPT_TEMPLATE.format(topic=topic)
-            }]
-        }]
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": PROMPT_TEMPLATE.format(topic=topic)}],
+        "response_format": {"type": "json_object"}
     }
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     
     async with aiohttp.ClientSession() as session:
-        async with session.post(GEMINI_URL, json=payload, timeout=30) as resp:
+        async with session.post(GROQ_URL, json=payload, headers=headers) as resp:
             if resp.status == 200:
                 data = await resp.json()
-                raw = data["candidates"][0]["content"]["parts"][0]["text"]
-                cleaned = raw.replace("```json", "").replace("```", "").strip()
-                return json.loads(cleaned)
+                content = data['choices'][0]['message']['content']
+                return json.loads(content)
             else:
-                err_msg = await resp.text()
-                raise Exception(f"Google API Error {resp.status}: {err_msg}")
+                raise Exception(f"AI Error: {await resp.text()}")
 
 def format_message(result: dict) -> str:
-    return f"""🔥 *VIRAL VIDEO PACKAGE READY!*
-
-━━━━━━━━━━━━━━━━━━━━
-🪝 *HOOK:* {result['hook']}
-
-📝 *SCRIPT:* {result['full_script']}
-
-🎙️ *VOICEOVER:* _{result['elevenlabs_script']}_
-
-▶️ *TITLE:* {result['youtube_title']}
-📸 *INSTA:* {result['instagram_caption']}
-#️⃣ *TAGS:* {result['hashtags']}
-━━━━━━━━━━━━━━━━━━━━
-🚀 Upload karo aur viral ho jao!"""
+    return f"🔥 *VIRAL SCRIPT READY!*\n\n*HOOK:* {result['hook']}\n\n*SCRIPT:* {result['full_script']}\n\n*VOICEOVER:* {result['elevenlabs_script']}\n\n🚀 *Upload & Go Viral!*"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📈 *Trading Journal Bot Live!*\nKoi bhi topic likho (e.g. `loss`) script ke liye.")
+    await update.message.reply_text("📈 Bot Live! Type a topic.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic = update.message.text.strip()
-    loading = await update.message.reply_text("⏳ Generating script...")
-    
+    loading = await update.message.reply_text("⏳ Writing script...")
     try:
-        result = await call_gemini(topic)
-        message = format_message(result)
+        result = await call_ai(topic)
         await loading.delete()
-        await update.message.reply_text(message, parse_mode="Markdown")
+        await update.message.reply_text(format_message(result), parse_mode="Markdown")
     except Exception as e:
-        if loading: await loading.delete()
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+        await loading.edit_text(f"❌ Error: {str(e)}")
 
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("✅ Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
