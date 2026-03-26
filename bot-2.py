@@ -18,7 +18,7 @@ if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN":
 if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_KEY":
     raise ValueError("ERROR: GEMINI_API_KEY missing in Railway Variables!")
 
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
 # ============================================
 
 PROMPT_TEMPLATE = """Tu ek expert viral video script writer hai jo Hinglish mein likhta hai.
