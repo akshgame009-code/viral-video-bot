@@ -10,9 +10,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # ============================================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# Sabse Updated URL (Version v1beta + latest suffix)
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
 # ============================================
 
 PROMPT_TEMPLATE = """Tu ek expert viral video script writer hai jo Hinglish mein likhta hai.
@@ -20,7 +17,7 @@ PROMPT_TEMPLATE = """Tu ek expert viral video script writer hai jo Hinglish mein
 PRODUCT: Trading Journal Template (Excel/Google Sheets)
 TOPIC: {topic}
 
-Return SIRF valid JSON (kuch aur bilkul mat likho, no markdown):
+Return SIRF valid JSON (no markdown, no extra text):
 {{
   "hook": "Opening 1-2 lines jo trader scroll rokde",
   "full_script": "Poora 45-60 sec Hinglish script",
@@ -42,28 +39,33 @@ async def call_gemini(topic: str) -> dict:
         }]
     }
     
+    # In 3 URLs mein se jo bhi kaam karega, bot use use karega
+    urls = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}",
+        f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    ]
+    
     async with aiohttp.ClientSession() as session:
-        async with session.post(GEMINI_URL, json=payload) as resp:
-            if resp.status != 200:
-                error_data = await resp.json()
-                # Agar flash-latest nahi milta toh stable version try karein
-                if resp.status == 404:
-                    alt_url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-                    async with session.post(alt_url, json=payload) as alt_resp:
-                        if alt_resp.status != 200:
-                            raise Exception(f"Google API Error: {await alt_resp.text()}")
-                        data = await alt_resp.json()
-                else:
-                    raise Exception(f"Google API Error: {error_data}")
-            else:
-                data = await resp.json()
-            
-            if "candidates" not in data or not data["candidates"]:
-                 raise Exception("Gemini ne content generate nahi kiya. API Key check karein.")
-            
-            raw = data["candidates"][0]["content"]["parts"][0]["text"]
-            cleaned = raw.replace("```json", "").replace("```", "").strip()
-            return json.loads(cleaned)
+        last_error = ""
+        for url in urls:
+            try:
+                async with session.post(url, json=payload, timeout=30) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        raw = data["candidates"][0]["content"]["parts"][0]["text"]
+                        # Markdown code blocks saaf karna
+                        cleaned = raw.replace("```json", "").replace("```", "").strip()
+                        return json.loads(cleaned)
+                    else:
+                        err_resp = await resp.text()
+                        last_error = f"URL Failed ({url}): {err_resp}"
+                        continue # Agla URL try karein
+            except Exception as e:
+                last_error = f"Error: {str(e)}"
+                continue
+                
+        raise Exception(f"Sare Models fail ho gaye. Check API Key or Region. Last Error: {last_error}")
 
 def format_message(result: dict) -> str:
     return f"""🔥 *VIRAL VIDEO PACKAGE READY!*
@@ -102,13 +104,13 @@ _{result['elevenlabs_script']}_
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📈 *Trading Journal Video Bot Active!*\n\n"
-        "Topic type karo (example: `loss`, `profit`, `discipline`) "
-        "aur main viral script bana dunga!"
+        "Koi bhi trading topic likho, main viral script bana dunga!\n"
+        "Example: `loss recovery`, `discipline`, `beginner mistakes`"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic = update.message.text.strip()
-    loading = await update.message.reply_text("⏳ *Viral script generate ho raha hai...*", parse_mode="Markdown")
+    loading = await update.message.reply_text("⏳ *Viral script generate ho raha hai...*")
     
     try:
         result = await call_gemini(topic)
@@ -123,14 +125,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     print("🤖 Starting Bot...")
     if not TELEGRAM_BOT_TOKEN or not GEMINI_API_KEY:
-        print("❌ Error: Keys missing in Variables!")
+        print("❌ Error: Railway Variables mein API Keys nahi mili!")
         return
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ Bot is Live!")
+    print("✅ Bot is Live on Railway!")
     app.run_polling()
 
 if __name__ == "__main__":
