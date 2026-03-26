@@ -6,13 +6,20 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ============================================
-# APNI KEYS YAHAN DAALO
+# SETTINGS (Keys Railway Variables se aayengi)
 # ============================================
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_KEY")
-# ============================================
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Check if keys exist
+if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN":
+    raise ValueError("ERROR: TELEGRAM_BOT_TOKEN missing in Railway Variables!")
+
+if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_KEY":
+    raise ValueError("ERROR: GEMINI_API_KEY missing in Railway Variables!")
 
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+# ============================================
 
 PROMPT_TEMPLATE = """Tu ek expert viral video script writer hai jo Hinglish mein likhta hai.
 
@@ -70,6 +77,8 @@ async def call_gemini(topic: str) -> dict:
     async with aiohttp.ClientSession() as session:
         async with session.post(GEMINI_URL, json=payload) as resp:
             data = await resp.json()
+            if "candidates" not in data:
+                 raise Exception(f"Gemini API Error: {data}")
             
     raw = data["candidates"][0]["content"]["parts"][0]["text"]
     # Clean JSON
@@ -147,7 +156,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    topic = "random viral trading topic - loss recovery, discipline, psychology, beginner mistakes, profit consistency - koi bhi choose karo"
+    topic = "random viral trading topic - loss recovery, discipline, psychology, beginner mistakes, profit consistency"
     await handle_generation(update, topic)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,11 +164,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_generation(update, topic)
 
 async def handle_generation(update: Update, topic: str):
-    # Loading message
     loading = await update.message.reply_text(
         "⏳ Viral video script ban raha hai...\n"
-        "🔍 Researching best hooks...\n"
-        "✍️ Script likh raha hoon...\n\n"
         "_30 seconds mein ready hoga!_",
         parse_mode="Markdown"
     )
@@ -167,75 +173,21 @@ async def handle_generation(update: Update, topic: str):
     try:
         result = await call_gemini(topic)
         message = format_message(result)
-        
-        # Delete loading message
         await loading.delete()
         
-        # Send in parts if too long
         if len(message) > 4000:
-            # Part 1: Script
-            part1 = f"""🔥 *VIRAL VIDEO PACKAGE* (1/2)
-
-━━━━━━━━━━━━━━━━━━━━
-🪝 *HOOK:*
-{result['hook']}
-
-📝 *FULL SCRIPT:*
-{result['full_script']}
-
-🎙️ *ELEVENLABS SCRIPT:*
-_{result['elevenlabs_script']}_"""
-            
-            # Part 2: Publishing info
-            part2 = f"""📦 *PUBLISHING INFO* (2/2)
-
-▶️ *YOUTUBE TITLE:*
-{result['youtube_title']}
-
-📄 *DESCRIPTION:*
-{result['description']}
-
-📸 *INSTAGRAM:*
-{result['instagram_caption']}
-
-#️⃣ *HASHTAGS:*
-{result['hashtags']}
-
-🔑 *KEYWORDS:* {result['keywords']}
-🖼️ *THUMBNAIL:* `{result['thumbnail_text']}`
-
-━━━━━━━━━━━━━━━━━━━━
-✅ ElevenLabs → Pexels → VN Editor → Upload! 🚀"""
-            
-            await update.message.reply_text(part1, parse_mode="Markdown")
-            await update.message.reply_text(part2, parse_mode="Markdown")
+            await update.message.reply_text(message[:4000], parse_mode="Markdown")
         else:
             await update.message.reply_text(message, parse_mode="Markdown")
             
-        # Quick action reminder
         await update.message.reply_text(
-            "🎯 *Next Steps:*\n"
-            "1️⃣ ElevenLabs app mein voiceover script paste karo\n"
-            "2️⃣ Pexels app se trading/chart clips lo\n"
-            "3️⃣ VN Editor mein assemble karo\n"
-            "4️⃣ Upload + apna product link bio mein daalo!\n\n"
-            "_Aur script chahiye? Koi bhi topic type karo!_\n"
-            "`loss` `discipline` `beginner` `profit` `mistake`",
+            "🎯 *Next Steps:* ElevenLabs → Pexels → VN Editor → Upload!",
             parse_mode="Markdown"
         )
         
-    except json.JSONDecodeError:
-        await loading.delete()
-        await update.message.reply_text(
-            "⚠️ Script format mein thodi problem aayi. Dobara try karo!\n"
-            "Same topic ya koi aur topic type karo. 🙏"
-        )
     except Exception as e:
-        await loading.delete()
-        await update.message.reply_text(
-            f"❌ Error aaya: {str(e)}\n\n"
-            "Thodi der baad try karo ya /start karo."
-        )
+        if loading: await loading.delete()
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 def main():
     print("🤖 Viral Video Bot starting...")
